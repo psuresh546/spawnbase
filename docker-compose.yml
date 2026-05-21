@@ -1,0 +1,135 @@
+# ─────────────────────────────────────────
+# SpawnBase — Full Stack
+# ─────────────────────────────────────────
+# Run:  docker-compose up --build
+# Stop: docker-compose down
+# ─────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL for SpawnBase metadata ──
+  postgres:
+    image: postgres:15
+    container_name: spawnbase-postgres
+    environment:
+      POSTGRES_DB: spawnbase
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - spawnbase-net
+
+  # ── Metadata Service ───────────────────
+  metadata-service:
+    build:
+      context: .
+      dockerfile: metadata-service/Dockerfile
+    container_name: spawnbase-metadata
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/spawnbase
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - spawnbase-net
+
+  # ── Lifecycle Service ──────────────────
+  lifecycle-service:
+    build:
+      context: .
+      dockerfile: lifecycle-service/Dockerfile
+    container_name: spawnbase-lifecycle
+    ports:
+      - "8082:8082"
+    environment:
+      METADATA_SERVICE_URL: http://metadata-service:8081
+    depends_on:
+      - metadata-service
+    networks:
+      - spawnbase-net
+
+  # ── Provisioning Service ───────────────
+  provisioning-service:
+    build:
+      context: .
+      dockerfile: provisioning-service/Dockerfile
+    container_name: spawnbase-provisioning
+    ports:
+      - "8083:8083"
+    environment:
+      METADATA_SERVICE_URL: http://metadata-service:8081
+      CREDENTIAL_SERVICE_URL: http://credential-service:8084
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - metadata-service
+      - credential-service
+    networks:
+      - spawnbase-net
+
+  # ── Credential Service ─────────────────
+  credential-service:
+    build:
+      context: .
+      dockerfile: credential-service/Dockerfile
+    container_name: spawnbase-credential
+    ports:
+      - "8084:8084"
+    environment:
+      ENCRYPTION_KEY: SpawnBase2026AesKey32BytesMin!!!
+    networks:
+      - spawnbase-net
+
+  # ── API Gateway ────────────────────────
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: spawnbase-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      JWT_SECRET: SpawnBase2026JwtSecretKeyMustBe32CharsMin!!
+      JWT_EXPIRATION_MS: 86400000
+    depends_on:
+      - metadata-service
+      - lifecycle-service
+      - provisioning-service
+      - credential-service
+    networks:
+      - spawnbase-net
+
+  # ── React Admin UI ─────────────────────
+  spawnbase-ui:
+    build:
+      # UI repo is a sibling folder outside spawnbase/
+      context: ../spawnbase-ui
+      dockerfile: Dockerfile
+    container_name: spawnbase-ui
+    ports:
+      - "3000:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - spawnbase-net
+
+volumes:
+  postgres_data:
+
+networks:
+  spawnbase-net:
+    driver: bridge

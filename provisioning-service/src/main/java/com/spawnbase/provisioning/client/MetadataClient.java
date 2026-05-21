@@ -18,7 +18,11 @@ import java.util.UUID;
 /**
  * HTTP client for metadata-service.
  *
- * Used by DriftDetector to query all RUNNING instances
+ * URL is configurable via property so it works
+ * both locally (localhost:8081) and in Docker Compose
+ * (http://metadata-service:8081).
+ *
+ * Used by DriftDetector to query instances by state
  * and check if their containers still exist in Docker.
  */
 @Component
@@ -28,17 +32,21 @@ public class MetadataClient {
     private final RestClient restClient;
 
     public MetadataClient(
-            @Value("${metadata.service.url}")
+            // Default value allows running locally without
+            // Docker Compose environment variables set
+            @Value("${metadata.service.url:" +
+                    "http://localhost:8081}")
             String metadataServiceUrl) {
         this.restClient = RestClient.builder()
                 .baseUrl(metadataServiceUrl)
                 .build();
+        log.info("MetadataClient → {}", metadataServiceUrl);
     }
 
     /**
      * Get all instances in a specific state.
-     * Used by drift detector to find RUNNING instances
-     * and check if their containers still exist.
+     * Used by drift detector to find RUNNING, FAILED,
+     * and DELETED instances for reconciliation.
      */
     public List<InstanceSummary> getInstancesByState(
             InstanceState state) {
@@ -46,10 +54,11 @@ public class MetadataClient {
         log.debug("Fetching instances with state: {}", state);
 
         try {
-            List<InstanceSummary> instances = restClient.get()
-                    .uri("/api/instances/admin/all")
-                    .retrieve()
-                    .body(new ParameterizedTypeReference<>() {});
+            List<InstanceSummary> instances =
+                    restClient.get()
+                            .uri("/api/instances/admin/all")
+                            .retrieve()
+                            .body(new ParameterizedTypeReference<List<InstanceSummary>>() {});
 
             if (instances == null) return List.of();
 
@@ -58,8 +67,8 @@ public class MetadataClient {
                     .toList();
 
         } catch (Exception e) {
-            log.error("Failed to fetch instances by state {}: {}",
-                    state, e.getMessage());
+            log.error("Failed to fetch instances by " +
+                    "state {}: {}", state, e.getMessage());
             return List.of();
         }
     }

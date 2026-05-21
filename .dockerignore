@@ -1,0 +1,6 @@
+**/target/
+**/*.log
+.git
+*.md
+node_modules/
+spawnbase-ui/node_modules/

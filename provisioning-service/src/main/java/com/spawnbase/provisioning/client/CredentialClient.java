@@ -10,7 +10,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-
+/**
+ * HTTP client for credential-service.
+ *
+ * URL is configurable via property so it works
+ * both locally (localhost:8084) and in Docker Compose
+ * (http://credential-service:8084).
+ */
 @Component
 @Slf4j
 public class CredentialClient {
@@ -18,16 +24,24 @@ public class CredentialClient {
     private final RestClient restClient;
 
     public CredentialClient(
-            @Value("${credential.service.url}")
+            // Default value allows running locally without
+            // Docker Compose environment variables set
+            @Value("${credential.service.url:" +
+                    "http://localhost:8084}")
             String credentialServiceUrl) {
         this.restClient = RestClient.builder()
                 .baseUrl(credentialServiceUrl)
                 .build();
+        log.info("CredentialClient → {}",
+                credentialServiceUrl);
     }
 
     /**
      * Store credentials for a newly provisioned instance.
      * Called after container reaches RUNNING state.
+     *
+     * Failure is logged but does NOT fail provisioning —
+     * credentials can be re-stored manually if needed.
      */
     public void storeCredentials(
             UUID instanceId,
@@ -60,8 +74,6 @@ public class CredentialClient {
                     "for instance: {}", instanceId);
 
         } catch (Exception e) {
-            // Log but don't fail provisioning
-            // Credentials can be re-stored manually
             log.error("Failed to store credentials " +
                             "for instance {}: {}",
                     instanceId, e.getMessage());
@@ -70,6 +82,7 @@ public class CredentialClient {
 
     /**
      * Delete credentials when instance is deleted.
+     * Called as part of the delete flow cleanup.
      */
     public void deleteCredentials(UUID instanceId) {
         log.info("Deleting credentials for instance: {}",
