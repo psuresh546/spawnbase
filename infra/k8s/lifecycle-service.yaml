@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lifecycle-service
+  namespace: spawnbase
+  labels:
+    app: lifecycle-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lifecycle-service
+  template:
+    metadata:
+      labels:
+        app: lifecycle-service
+    spec:
+      serviceAccountName: spawnbase-sa
+      containers:
+        - name: lifecycle-service
+          image: spawnbaseacrdev.azurecr.io/lifecycle-service:latest
+          ports:
+            - containerPort: 8082
+          env:
+            - name: METADATA_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: spawnbase-config
+                  key: METADATA_SERVICE_URL
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 40
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lifecycle-service
+  namespace: spawnbase
+spec:
+  selector:
+    app: lifecycle-service
+  ports:
+    - port: 8082
+      targetPort: 8082
+  type: ClusterIP

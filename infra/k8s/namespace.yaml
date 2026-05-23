@@ -1,0 +1,10 @@
+# All SpawnBase resources live in the
+# spawnbase namespace — isolated from
+# other workloads on the cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spawnbase
+  labels:
+    project: spawnbase
+    managed-by: terraform

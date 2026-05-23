@@ -1,0 +1,26 @@
+# Non-sensitive configuration shared
+# across all services.
+# Sensitive values (passwords, secrets)
+# come from Key Vault via CSI driver.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spawnbase-config
+  namespace: spawnbase
+data:
+  # Service URLs — use K8s DNS names
+  # Format: http://<service-name>.<namespace>.svc.cluster.local
+  METADATA_SERVICE_URL: "http://metadata-service.spawnbase.svc.cluster.local:8081"
+  CREDENTIAL_SERVICE_URL: "http://credential-service.spawnbase.svc.cluster.local:8084"
+  LIFECYCLE_SERVICE_URL: "http://lifecycle-service.spawnbase.svc.cluster.local:8082"
+  PROVISIONING_SERVICE_URL: "http://provisioning-service.spawnbase.svc.cluster.local:8083"
+
+  # Spring datasource — host only
+  # Password comes from Key Vault
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://spawnbase-postgres-dev.postgres.database.azure.com:5432/spawnbase"
+  SPRING_DATASOURCE_USERNAME: "spawnbaseadmin"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
+
+  # Drift detector
+  DRIFT_DETECTOR_INTERVAL_MS: "60000"
+  DRIFT_DETECTOR_INITIAL_DELAY_MS: "30000"

@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────
+# Metadata Service
+# Source of truth for instance state
+# Port: 8081
+# ─────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metadata-service
+  namespace: spawnbase
+  labels:
+    app: metadata-service
+    version: "1.0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metadata-service
+  template:
+    metadata:
+      labels:
+        app: metadata-service
+    spec:
+      serviceAccountName: spawnbase-sa
+      containers:
+        - name: metadata-service
+          # Image pushed to ACR by CI pipeline
+          image: spawnbaseacrdev.azurecr.io/metadata-service:latest
+          ports:
+            - containerPort: 8081
+          env:
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: spawnbase-config
+                  key: SPRING_DATASOURCE_URL
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: spawnbase-config
+                  key: SPRING_DATASOURCE_USERNAME
+            - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+              valueFrom:
+                configMapKeyRef:
+                  name: spawnbase-config
+                  key: SPRING_JPA_HIBERNATE_DDL_AUTO
+            # Password injected from Key Vault
+            # via CSI Secrets Store (Day 29)
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: spawnbase-secrets
+                  key: postgres-password
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 60
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metadata-service
+  namespace: spawnbase
+spec:
+  selector:
+    app: metadata-service
+  ports:
+    - port: 8081
+      targetPort: 8081
+  type: ClusterIP

@@ -1,0 +1,90 @@
+# ─────────────────────────────────────────
+# Provisioning Service
+# Requires Docker socket access to create
+# containers on the host Docker daemon.
+#
+# Security note: mounting Docker socket
+# grants root-equivalent host access.
+# Acceptable for this architecture —
+# document in README as a known trade-off.
+# ─────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provisioning-service
+  namespace: spawnbase
+  labels:
+    app: provisioning-service
+spec:
+  # Only 1 replica — Docker socket is
+  # node-local, multiple replicas would
+  # need DaemonSet or DinD
+  replicas: 1
+  selector:
+    matchLabels:
+      app: provisioning-service
+  template:
+    metadata:
+      labels:
+        app: provisioning-service
+    spec:
+      serviceAccountName: spawnbase-sa
+      containers:
+        - name: provisioning-service
+          image: spawnbaseacrdev.azurecr.io/provisioning-service:latest
+          ports:
+            - containerPort: 8083
+          env:
+            - name: METADATA_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: spawnbase-config
+                  key: METADATA_SERVICE_URL
+            - name: CREDENTIAL_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: spawnbase-config
+                  key: CREDENTIAL_SERVICE_URL
+          volumeMounts:
+            # Docker socket mount —
+            # allows provisioning-service to call
+            # Docker Engine API on the host node
+            - name: docker-socket
+              mountPath: /var/run/docker.sock
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8083
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8083
+            initialDelaySeconds: 40
+            periodSeconds: 30
+      volumes:
+        - name: docker-socket
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: provisioning-service
+  namespace: spawnbase
+spec:
+  selector:
+    app: provisioning-service
+  ports:
+    - port: 8083
+      targetPort: 8083
+  type: ClusterIP

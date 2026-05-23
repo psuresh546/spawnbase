@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: spawnbase
+  labels:
+    app: api-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      serviceAccountName: spawnbase-sa
+      containers:
+        - name: api-gateway
+          image: spawnbaseacrdev.azurecr.io/api-gateway:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: spawnbase-secrets
+                  key: jwt-secret
+            - name: JWT_EXPIRATION_MS
+              value: "86400000"
+            # Gateway routes — use K8s DNS
+            - name: SPRING_CLOUD_GATEWAY_SERVER_WEBMVC_ROUTES_0_URI
+              value: "http://metadata-service.spawnbase.svc.cluster.local:8081"
+            - name: SPRING_CLOUD_GATEWAY_SERVER_WEBMVC_ROUTES_1_URI
+              value: "http://lifecycle-service.spawnbase.svc.cluster.local:8082"
+            - name: SPRING_CLOUD_GATEWAY_SERVER_WEBMVC_ROUTES_2_URI
+              value: "http://provisioning-service.spawnbase.svc.cluster.local:8083"
+            - name: SPRING_CLOUD_GATEWAY_SERVER_WEBMVC_ROUTES_3_URI
+              value: "http://credential-service.spawnbase.svc.cluster.local:8084"
+            - name: SPRING_CLOUD_GATEWAY_SERVER_WEBMVC_ROUTES_4_URI
+              value: "http://metadata-service.spawnbase.svc.cluster.local:8081"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 40
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: spawnbase
+spec:
+  selector:
+    app: api-gateway
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP

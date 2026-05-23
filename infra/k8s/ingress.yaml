@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────
+# Ingress
+# Routes external traffic into the cluster.
+#
+# Routing rules:
+# /api/*  → api-gateway (port 8080)
+# /*      → spawnbase-ui (port 80)
+#
+# Requires nginx ingress controller:
+# kubectl apply -f https://raw.githubusercontent.com/
+# kubernetes/ingress-nginx/main/deploy/static/
+# provider/cloud/deploy.yaml
+# ─────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: spawnbase-ingress
+  namespace: spawnbase
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: spawnbase.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: spawnbase-ui
+                port:
+                  number: 80
