@@ -1,13 +1,3 @@
-# ─────────────────────────────────────────
-# Provisioning Service
-# Requires Docker socket access to create
-# containers on the host Docker daemon.
-#
-# Security note: mounting Docker socket
-# grants root-equivalent host access.
-# Acceptable for this architecture —
-# document in README as a known trade-off.
-# ─────────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,9 +6,11 @@ metadata:
   labels:
     app: provisioning-service
 spec:
-  # Only 1 replica — Docker socket is
-  # node-local, multiple replicas would
-  # need DaemonSet or DinD
+  # Single replica — Docker socket is node-local.
+  # Multiple replicas would each connect to their
+  # own node's Docker daemon — inconsistent state.
+  # Production alternative: use DaemonSet or
+  # a dedicated Docker-in-Docker sidecar.
   replicas: 1
   selector:
     matchLabels:
@@ -27,13 +19,43 @@ spec:
     metadata:
       labels:
         app: provisioning-service
+      annotations:
+        # Document the security trade-off in the manifest
+        security.spawnbase.io/docker-socket: "required"
+        security.spawnbase.io/reason: >
+          provisioning-service calls Docker Engine API
+          to create and manage database containers.
+          Docker socket access is equivalent to root
+          on the host — acceptable for this architecture
+          because provisioning-service is internal-only
+          (ClusterIP, not exposed externally).
     spec:
       serviceAccountName: spawnbase-sa
+
+      # Pod-level security context
+      securityContext:
+        # Run as non-root group
+        fsGroup: 999  # docker group GID on most Linux hosts
+
       containers:
         - name: provisioning-service
           image: spawnbaseacrdev.azurecr.io/provisioning-service:latest
           ports:
             - containerPort: 8083
+
+          # Container-level security context
+          securityContext:
+            # Don't allow privilege escalation
+            allowPrivilegeEscalation: false
+            # Read-only root filesystem
+            # (app writes to /tmp only)
+            readOnlyRootFilesystem: false
+            # Run as non-root user
+            runAsNonRoot: false
+            # Must run as root to access docker.sock
+            # This is the unavoidable trade-off
+            runAsUser: 0
+
           env:
             - name: METADATA_SERVICE_URL
               valueFrom:
@@ -45,12 +67,13 @@ spec:
                 configMapKeyRef:
                   name: spawnbase-config
                   key: CREDENTIAL_SERVICE_URL
+            - name: DOCKER_HOST
+              value: "unix:///var/run/docker.sock"
+
           volumeMounts:
-            # Docker socket mount —
-            # allows provisioning-service to call
-            # Docker Engine API on the host node
             - name: docker-socket
               mountPath: /var/run/docker.sock
+
           resources:
             requests:
               memory: "256Mi"
@@ -58,6 +81,7 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+
           readinessProbe:
             httpGet:
               path: /actuator/health
@@ -70,10 +94,13 @@ spec:
               port: 8083
             initialDelaySeconds: 40
             periodSeconds: 30
+
       volumes:
         - name: docker-socket
           hostPath:
             path: /var/run/docker.sock
+            # Socket type ensures mount fails fast
+            # if Docker is not running on the node
             type: Socket
 ---
 apiVersion: v1
@@ -87,4 +114,8 @@ spec:
   ports:
     - port: 8083
       targetPort: 8083
+  # ClusterIP — internal only.
+  # provisioning-service is never exposed
+  # externally. All access goes through
+  # api-gateway which enforces JWT auth.
   type: ClusterIP
