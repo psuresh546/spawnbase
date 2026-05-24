@@ -1,0 +1,339 @@
+# ─────────────────────────────────────────
+# SpawnBase — Azure DevOps CD Pipeline
+# ─────────────────────────────────────────
+# Triggered by CI pipeline completion.
+# Downloads image-tags artifact from CI,
+# deploys to AKS dev, smoke tests,
+# then waits for manual approval before prod.
+#
+# Required pipeline variables:
+#   ACR_LOGIN_SERVER   spawnbaseacrdev.azurecr.io
+#   RESOURCE_GROUP     spawnbase-rg
+#   AKS_CLUSTER_NAME   spawnbase-aks-dev
+#   AKS_CLUSTER_PROD   spawnbase-aks-prod
+#
+# Required service connections:
+#   azure-subscription  → Azure Resource Manager
+# ─────────────────────────────────────────
+
+# Triggered by CI pipeline, not by git push
+trigger: none
+
+# CD fires when CI completes successfully on main
+resources:
+  pipelines:
+    - pipeline: ci
+      source: "SpawnBase CI"
+      trigger:
+        branches:
+          include:
+            - main
+
+variables:
+  NAMESPACE: spawnbase
+  K8S_MANIFEST_PATH: infra/k8s
+
+# ─────────────────────────────────────────
+# Stage 1 — Deploy to Dev
+# ─────────────────────────────────────────
+stages:
+  - stage: DeployDev
+    displayName: "Deploy to Dev"
+    jobs:
+      - deployment: DeployToDev
+        displayName: "kubectl rollout — dev"
+        pool:
+          vmImage: "ubuntu-latest"
+
+        # Deployment environment tracks history
+        # and enables rollback in Azure DevOps UI
+        environment: "spawnbase-dev"
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                # Get AKS credentials so kubectl works
+                - task: AzureCLI@2
+                  displayName: "Get AKS credentials"
+                  inputs:
+                    azureSubscription: "azure-subscription"
+                    scriptType: "bash"
+                    scriptLocation: "inlineScript"
+                    inlineScript: |
+                      az aks get-credentials \
+                        --resource-group $(RESOURCE_GROUP) \
+                        --name $(AKS_CLUSTER_NAME) \
+                        --overwrite-existing
+                      kubectl get nodes
+
+                # Download image-tags.json from CI
+                - task: DownloadPipelineArtifact@2
+                  displayName: "Download image tags from CI"
+                  inputs:
+                    buildType: "specific"
+                    project: "$(System.TeamProjectId)"
+                    pipeline: "$(resources.pipeline.ci.pipelineID)"
+                    artifactName: "image-tags"
+                    targetPath: "$(Pipeline.Workspace)/image-tags"
+
+                - script: |
+                    cat $(Pipeline.Workspace)/image-tags/image-tags.json
+                    BUILD_ID=$(cat $(Pipeline.Workspace)/image-tags/image-tags.json \
+                      | python3 -c "import sys,json; print(json.load(sys.stdin)['buildId'])")
+                    echo "Deploying build: $BUILD_ID"
+                    echo "##vso[task.setvariable variable=BUILD_ID]$BUILD_ID"
+                  displayName: "Read build ID from artifact"
+
+                # Update each deployment to use the new image tag.
+                # kubectl set image is the rolling update command —
+                # it updates the image and triggers a rollout.
+                # Kubernetes replaces pods one at a time,
+                # keeping the service available throughout.
+                - script: |
+                    echo "Deploying build $(BUILD_ID) to dev..."
+
+                    services=(
+                      "metadata-service"
+                      "lifecycle-service"
+                      "provisioning-service"
+                      "credential-service"
+                      "api-gateway"
+                      "spawnbase-ui"
+                    )
+
+                    for service in "${services[@]}"; do
+                      echo "Updating ${service}..."
+
+                      kubectl set image \
+                        deployment/${service} \
+                        ${service}=$(ACR_LOGIN_SERVER)/${service}:$(BUILD_ID) \
+                        --namespace $(NAMESPACE)
+
+                      echo "✅ ${service} image updated"
+                    done
+                  displayName: "Update image tags in AKS"
+
+                # Wait for all deployments to complete.
+                # rollout status blocks until all pods
+                # are Running or the timeout is hit.
+                - script: |
+                    echo "Waiting for rollouts to complete..."
+
+                    services=(
+                      "metadata-service"
+                      "lifecycle-service"
+                      "provisioning-service"
+                      "credential-service"
+                      "api-gateway"
+                      "spawnbase-ui"
+                    )
+
+                    for service in "${services[@]}"; do
+                      echo "Waiting for ${service}..."
+
+                      kubectl rollout status \
+                        deployment/${service} \
+                        --namespace $(NAMESPACE) \
+                        --timeout=300s
+
+                      echo "✅ ${service} rollout complete"
+                    done
+
+                    echo "All services deployed successfully"
+                  displayName: "Wait for rollouts"
+
+                - script: |
+                    echo "=== Pod Status ==="
+                    kubectl get pods \
+                      --namespace $(NAMESPACE) \
+                      --output wide
+
+                    echo "=== Deployment Status ==="
+                    kubectl get deployments \
+                      --namespace $(NAMESPACE)
+                  displayName: "Show deployment status"
+
+  # ─────────────────────────────────────────
+  # Stage 2 — Smoke Tests
+  # ─────────────────────────────────────────
+  - stage: SmokeTest
+    displayName: "Smoke Tests"
+    dependsOn: DeployDev
+    condition: succeeded()
+    jobs:
+      - job: HealthChecks
+        displayName: "Health endpoint checks"
+        pool:
+          vmImage: "ubuntu-latest"
+
+        steps:
+          - task: AzureCLI@2
+            displayName: "Get AKS credentials"
+            inputs:
+              azureSubscription: "azure-subscription"
+              scriptType: "bash"
+              scriptLocation: "inlineScript"
+              inlineScript: |
+                az aks get-credentials \
+                  --resource-group $(RESOURCE_GROUP) \
+                  --name $(AKS_CLUSTER_NAME) \
+                  --overwrite-existing
+
+          # Port-forward each service and check /actuator/health.
+          # In a real cluster you'd use the Ingress URL instead.
+          # Port-forward is used here because:
+          # - No public IP is needed (cheaper)
+          # - Works in any AKS cluster without Ingress setup
+          - script: |
+              check_health() {
+                local service=$1
+                local port=$2
+                local name=$3
+
+                echo "Checking ${name}..."
+
+                # Port-forward in background
+                kubectl port-forward \
+                  svc/${service} \
+                  ${port}:${port} \
+                  --namespace $(NAMESPACE) &
+                PF_PID=$!
+
+                # Wait for port-forward to be ready
+                sleep 5
+
+                # Hit health endpoint
+                HTTP_STATUS=$(curl -s -o /dev/null \
+                  -w "%{http_code}" \
+                  http://localhost:${port}/actuator/health)
+
+                # Kill port-forward
+                kill $PF_PID 2>/dev/null
+
+                if [ "$HTTP_STATUS" = "200" ]; then
+                  echo "✅ ${name} → HTTP ${HTTP_STATUS}"
+                  return 0
+                else
+                  echo "❌ ${name} → HTTP ${HTTP_STATUS}"
+                  return 1
+                fi
+              }
+
+              echo "=== SpawnBase Smoke Tests ==="
+
+              check_health "metadata-service"    8081 "Metadata Service"
+              check_health "lifecycle-service"   8082 "Lifecycle Service"
+              check_health "provisioning-service" 8083 "Provisioning Service"
+              check_health "credential-service"  8084 "Credential Service"
+              check_health "api-gateway"         8080 "API Gateway"
+
+              echo "=== All smoke tests passed ==="
+            displayName: "Health endpoint smoke tests"
+
+  # ─────────────────────────────────────────
+  # Stage 3 — Deploy to Prod
+  # ─────────────────────────────────────────
+  - stage: DeployProd
+    displayName: "Deploy to Prod"
+    dependsOn: SmokeTest
+    condition: succeeded()
+    jobs:
+      - deployment: DeployToProd
+        displayName: "kubectl rollout — prod"
+        pool:
+          vmImage: "ubuntu-latest"
+
+        # The "spawnbase-prod" environment has a
+        # manual approval gate configured in Azure DevOps.
+        # The pipeline pauses here until a designated
+        # approver clicks Approve in the UI.
+        # This prevents accidental prod deployments.
+        environment: "spawnbase-prod"
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: "Get prod AKS credentials"
+                  inputs:
+                    azureSubscription: "azure-subscription"
+                    scriptType: "bash"
+                    scriptLocation: "inlineScript"
+                    inlineScript: |
+                      az aks get-credentials \
+                        --resource-group $(RESOURCE_GROUP) \
+                        --name $(AKS_CLUSTER_PROD) \
+                        --overwrite-existing
+
+                - task: DownloadPipelineArtifact@2
+                  displayName: "Download image tags from CI"
+                  inputs:
+                    buildType: "specific"
+                    project: "$(System.TeamProjectId)"
+                    pipeline: "$(resources.pipeline.ci.pipelineID)"
+                    artifactName: "image-tags"
+                    targetPath: "$(Pipeline.Workspace)/image-tags"
+
+                - script: |
+                    BUILD_ID=$(cat $(Pipeline.Workspace)/image-tags/image-tags.json \
+                      | python3 -c "import sys,json; print(json.load(sys.stdin)['buildId'])")
+                    echo "##vso[task.setvariable variable=BUILD_ID]$BUILD_ID"
+                  displayName: "Read build ID"
+
+                - script: |
+                    echo "Deploying build $(BUILD_ID) to PROD..."
+
+                    services=(
+                      "metadata-service"
+                      "lifecycle-service"
+                      "provisioning-service"
+                      "credential-service"
+                      "api-gateway"
+                      "spawnbase-ui"
+                    )
+
+                    for service in "${services[@]}"; do
+                      kubectl set image \
+                        deployment/${service} \
+                        ${service}=$(ACR_LOGIN_SERVER)/${service}:$(BUILD_ID) \
+                        --namespace $(NAMESPACE)
+                    done
+                  displayName: "Update image tags in prod AKS"
+
+                - script: |
+                    services=(
+                      "metadata-service"
+                      "lifecycle-service"
+                      "provisioning-service"
+                      "credential-service"
+                      "api-gateway"
+                      "spawnbase-ui"
+                    )
+
+                    for service in "${services[@]}"; do
+                      kubectl rollout status \
+                        deployment/${service} \
+                        --namespace $(NAMESPACE) \
+                        --timeout=300s
+                    done
+
+                    echo "✅ Prod deployment complete"
+                  displayName: "Wait for prod rollouts"
+
+# ─────────────────────────────────────────
+# Rollback — Run Manually If Needed
+# ─────────────────────────────────────────
+# Not a pipeline stage — run from terminal:
+#
+# kubectl rollout undo deployment/api-gateway \
+#   --namespace spawnbase
+#
+# Or roll back all services:
+# for svc in metadata-service lifecycle-service \
+#   provisioning-service credential-service \
+#   api-gateway spawnbase-ui; do
+#   kubectl rollout undo deployment/$svc \
+#     --namespace spawnbase
+# done

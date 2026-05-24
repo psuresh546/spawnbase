@@ -46,10 +46,7 @@ resource "azurerm_kubernetes_cluster" "spawnbase" {
   workload_identity_enabled = true
 
   # Automatic patch upgrades
-  # Wrong {The argument was renamed/restructured in a newer version of the AzureRM provider. Since I'm on v3.117.1, it expects automatic_channel_upgrade. Our config was likely written against an older provider version.}
-  #automatic_upgrade_channel = "patch"
-  # Correct
-  automatic_channel_upgrade = "patch"
+  automatic_channel_upgrade = "patch" # automatic_upgrade_channel = "patch" -- {Terraform v1.15.4}
 
   # Azure Monitor integration
   monitor_metrics {}
@@ -69,5 +66,5 @@ resource "azurerm_kubernetes_cluster" "spawnbase" {
 resource "azurerm_role_assignment" "aks_acr_pull" {
   scope                = azurerm_container_registry.spawnbase.id
   role_definition_name = "AcrPull"
-  principal_id         = azurerm_kubernetes_cluster.spawnbase.kubelet_identity[0].object_id
+  principal_id         = azurerm_kubernetes_cluster.spawnbase.kubelet_identity[0].object_id # getting error on object_id (unresolved object reference)
 }

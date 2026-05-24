@@ -128,4 +128,4 @@ socket dependency entirely.
 > the Docker Engine API calls with Kubernetes Job
 > creation, which eliminates the socket dependency
 > entirely and is the pattern used by tools like
-> Helm and the Kubernetes operator framework."x
+> Helm and the Kubernetes operator framework."

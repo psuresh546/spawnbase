@@ -6,6 +6,7 @@ import com.spawnbase.metadata.dto.CreateInstanceRequest;
 import com.spawnbase.metadata.dto.InstanceResponse;
 import com.spawnbase.metadata.dto.UpdateStateRequest;
 import com.spawnbase.metadata.entity.Instance;
+import com.spawnbase.metadata.event.InstanceEventPublisher;
 import com.spawnbase.metadata.exception.InstanceNotFoundException;
 import com.spawnbase.metadata.repository.InstanceRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +30,9 @@ class InstanceServiceTest {
 
     @Mock
     private InstanceRepository instanceRepository;
+
+    @Mock
+    private InstanceEventPublisher eventPublisher; // ← ADDED
 
     @InjectMocks
     private InstanceService instanceService;
@@ -75,8 +79,12 @@ class InstanceServiceTest {
         assertThat(response.getDbType())
                 .isEqualTo(DatabaseType.POSTGRESQL);
 
-        // Verify save was called exactly once
-        verify(instanceRepository, times(1)).save(any(Instance.class));
+        verify(instanceRepository, times(1))
+                .save(any(Instance.class));
+
+        // Verify event was published
+        verify(eventPublisher, times(1))
+                .publishCreated(any(), any(), any());
     }
 
     @Test
@@ -139,6 +147,11 @@ class InstanceServiceTest {
         // ASSERT
         assertThat(response.getState())
                 .isEqualTo(InstanceState.PROVISIONING);
+
+        // Verify event was published
+        verify(eventPublisher, times(1))
+                .publishStateChanged(any(), any(), any(),
+                        any(), any());
     }
 
     @Test
@@ -156,7 +169,11 @@ class InstanceServiceTest {
                 instanceService.updateState(instanceId, request))
                 .isInstanceOf(InstanceNotFoundException.class);
 
-        // Verify save was NEVER called
         verify(instanceRepository, never()).save(any());
+
+        // Verify event was NOT published
+        verify(eventPublisher, never())
+                .publishStateChanged(any(), any(), any(),
+                        any(), any());
     }
 }

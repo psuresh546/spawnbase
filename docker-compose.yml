@@ -72,7 +72,11 @@ services:
     environment:
       METADATA_SERVICE_URL: http://metadata-service:8081
       CREDENTIAL_SERVICE_URL: http://credential-service:8084
-      DOCKER_HOST: unix:///var/run/docker.sock
+      # host.docker.internal resolves to the host machine
+      # from inside a Docker container on Docker Desktop.
+      # This lets provisioning-service call Docker Engine
+      # TCP API running on the host at port 2375.
+      DOCKER_HOST: http://host.docker.internal:2375
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
@@ -91,6 +95,14 @@ services:
       - "8084:8084"
     environment:
       ENCRYPTION_KEY: SpawnBase2026AesKey32BytesMin!!!
+      # ← ADD THESE THREE LINES:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/spawnbase
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - spawnbase-net
 
@@ -105,6 +117,11 @@ services:
     environment:
       JWT_SECRET: SpawnBase2026JwtSecretKeyMustBe32CharsMin!!
       JWT_EXPIRATION_MS: 86400000
+      # Docker Compose container name DNS resolution
+      METADATA_SERVICE_URL: http://metadata-service:8081
+      LIFECYCLE_SERVICE_URL: http://lifecycle-service:8082
+      PROVISIONING_SERVICE_URL: http://provisioning-service:8083
+      CREDENTIAL_SERVICE_URL: http://credential-service:8084
     depends_on:
       - metadata-service
       - lifecycle-service
