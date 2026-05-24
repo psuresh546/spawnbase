@@ -1,0 +1,250 @@
+# ─────────────────────────────────────────
+# SpawnBase — Azure DevOps CI Pipeline
+# ─────────────────────────────────────────
+# Triggers on every push to main.
+# Runs tests, builds Docker images,
+# pushes to ACR, validates K8s manifests.
+#
+# Required pipeline variables (set in UI):
+#   ACR_NAME          spawnbaseacrdev
+#   ACR_LOGIN_SERVER  spawnbaseacrdev.azurecr.io
+#   RESOURCE_GROUP    spawnbase-rg
+#   AKS_CLUSTER_NAME  spawnbase-aks-dev
+#
+# Required service connections (set in UI):
+#   docker-registry-connection  → ACR
+#   azure-subscription          → Azure ARM
+# ─────────────────────────────────────────
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    exclude:
+      # Don't trigger on docs-only changes
+      - docs/**
+      - "*.md"
+      - infra/terraform/**
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  # Maven settings
+  MAVEN_OPTS: "-Dmaven.repo.local=$(Pipeline.Workspace)/.m2"
+  IMAGE_TAG: "$(Build.BuildId)"
+
+# ─────────────────────────────────────────
+# Stage 1 — Test
+# ─────────────────────────────────────────
+stages:
+  - stage: Test
+    displayName: "Run Tests"
+    jobs:
+      - job: UnitAndIntegrationTests
+        displayName: "Maven Test"
+        pool:
+          vmImage: "ubuntu-latest"
+
+        steps:
+          - task: Cache@2
+            displayName: "Cache Maven dependencies"
+            inputs:
+              key: 'maven | "$(Agent.OS)" | **/pom.xml'
+              restoreKeys: |
+                maven | "$(Agent.OS)"
+                maven
+              path: $(Pipeline.Workspace)/.m2
+
+          - task: Maven@4
+            displayName: "Run all tests"
+            inputs:
+              mavenPomFile: "pom.xml"
+              goals: "test"
+              options: "--no-transfer-progress"
+              publishJUnitResults: true
+              testResultsFiles: "**/surefire-reports/TEST-*.xml"
+              javaHomeOption: "JDKVersion"
+              jdkVersionOption: "1.21"
+
+          - task: PublishTestResults@2
+            displayName: "Publish test results"
+            condition: always()
+            inputs:
+              testResultsFormat: "JUnit"
+              testResultsFiles: "**/surefire-reports/TEST-*.xml"
+              mergeTestResults: true
+              testRunTitle: "SpawnBase Unit & Integration Tests"
+
+  # ─────────────────────────────────────────
+  # Stage 2 — Build Docker Images
+  # ─────────────────────────────────────────
+  - stage: Build
+    displayName: "Build Docker Images"
+    dependsOn: Test
+    condition: succeeded()
+    jobs:
+      - job: DockerBuild
+        displayName: "docker-compose build"
+        pool:
+          vmImage: "ubuntu-latest"
+
+        steps:
+          - task: Cache@2
+            displayName: "Cache Maven dependencies"
+            inputs:
+              key: 'maven | "$(Agent.OS)" | **/pom.xml'
+              restoreKeys: |
+                maven | "$(Agent.OS)"
+                maven
+              path: $(Pipeline.Workspace)/.m2
+
+          - script: |
+              echo "Building all SpawnBase Docker images..."
+              docker-compose build \
+                --build-arg BUILD_ID=$(Build.BuildId)
+            displayName: "Build all images"
+
+          - script: |
+              echo "Verifying images were built..."
+              docker images | grep spawnbase
+            displayName: "Verify images exist"
+
+          - script: |
+              echo "Tagging images with build ID: $(IMAGE_TAG)"
+
+              services=(
+                "metadata-service"
+                "lifecycle-service"
+                "provisioning-service"
+                "credential-service"
+                "api-gateway"
+                "spawnbase-ui"
+              )
+
+              for service in "${services[@]}"; do
+                # Tag with build ID for traceability
+                docker tag \
+                  spawnbase-${service}:latest \
+                  $(ACR_LOGIN_SERVER)/${service}:$(IMAGE_TAG)
+
+                # Also tag latest for convenience
+                docker tag \
+                  spawnbase-${service}:latest \
+                  $(ACR_LOGIN_SERVER)/${service}:latest
+
+                echo "Tagged ${service}:$(IMAGE_TAG)"
+              done
+            displayName: "Tag images for ACR"
+
+  # ─────────────────────────────────────────
+  # Stage 3 — Push to ACR
+  # ─────────────────────────────────────────
+  - stage: Push
+    displayName: "Push to ACR"
+    dependsOn: Build
+    # Only push on main branch — not PRs
+    condition: |
+      and(
+        succeeded(),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main')
+      )
+    jobs:
+      - job: DockerPush
+        displayName: "Push images to ACR"
+        pool:
+          vmImage: "ubuntu-latest"
+
+        steps:
+          - task: Docker@2
+            displayName: "Login to ACR"
+            inputs:
+              command: "login"
+              containerRegistry: "docker-registry-connection"
+
+          - script: |
+              echo "Pushing all images to ACR..."
+
+              services=(
+                "metadata-service"
+                "lifecycle-service"
+                "provisioning-service"
+                "credential-service"
+                "api-gateway"
+                "spawnbase-ui"
+              )
+
+              for service in "${services[@]}"; do
+                echo "Pushing ${service}..."
+
+                docker push \
+                  $(ACR_LOGIN_SERVER)/${service}:$(IMAGE_TAG)
+
+                docker push \
+                  $(ACR_LOGIN_SERVER)/${service}:latest
+
+                echo "✅ Pushed ${service}"
+              done
+
+              echo "All images pushed to $(ACR_LOGIN_SERVER)"
+            displayName: "Push all images"
+
+          - script: |
+              # Write image tags to artifact for CD pipeline
+              mkdir -p $(Build.ArtifactStagingDirectory)
+              cat > $(Build.ArtifactStagingDirectory)/image-tags.json << EOF
+              {
+                "buildId": "$(IMAGE_TAG)",
+                "acrLoginServer": "$(ACR_LOGIN_SERVER)",
+                "images": {
+                  "metadata-service": "$(IMAGE_TAG)",
+                  "lifecycle-service": "$(IMAGE_TAG)",
+                  "provisioning-service": "$(IMAGE_TAG)",
+                  "credential-service": "$(IMAGE_TAG)",
+                  "api-gateway": "$(IMAGE_TAG)",
+                  "spawnbase-ui": "$(IMAGE_TAG)"
+                }
+              }
+              EOF
+              cat $(Build.ArtifactStagingDirectory)/image-tags.json
+            displayName: "Write image tags artifact"
+
+          - task: PublishBuildArtifacts@1
+            displayName: "Publish image tags artifact"
+            inputs:
+              pathToPublish: "$(Build.ArtifactStagingDirectory)"
+              artifactName: "image-tags"
+
+  # ─────────────────────────────────────────
+  # Stage 4 — Validate K8s Manifests
+  # ─────────────────────────────────────────
+  - stage: Validate
+    displayName: "Validate K8s Manifests"
+    dependsOn: []  # Runs in parallel with Test
+    jobs:
+      - job: KubectlDryRun
+        displayName: "kubectl dry-run"
+        pool:
+          vmImage: "ubuntu-latest"
+
+        steps:
+          - script: |
+              # Install kubectl
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s \
+                https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl
+              sudo mv kubectl /usr/local/bin/
+              kubectl version --client
+            displayName: "Install kubectl"
+
+          - script: |
+              echo "Validating all K8s manifests..."
+              kubectl apply \
+                --dry-run=client \
+                -f infra/k8s/ \
+                --validate=true
+              echo "✅ All manifests valid"
+            displayName: "Validate K8s manifests"
