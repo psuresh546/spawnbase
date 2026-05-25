@@ -1,0 +1,74 @@
+# ─────────────────────────────────────────
+# Prometheus Scrape Configuration
+# ─────────────────────────────────────────
+# Scrapes /actuator/prometheus from all
+# SpawnBase Spring Boot services every 15s.
+#
+# Spring Boot exposes metrics at:
+# /actuator/prometheus
+# when micrometer-registry-prometheus is
+# on the classpath.
+# ─────────────────────────────────────────
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    project: spawnbase
+
+scrape_configs:
+
+  # Prometheus scrapes itself
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # API Gateway
+  - job_name: api-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['api-gateway:8080']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: api-gateway
+
+  # Metadata Service
+  - job_name: metadata-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['metadata-service:8081']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: metadata-service
+
+  # Lifecycle Service
+  - job_name: lifecycle-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['lifecycle-service:8082']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: lifecycle-service
+
+  # Provisioning Service
+  - job_name: provisioning-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['provisioning-service:8083']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: provisioning-service
+
+  # Credential Service
+  - job_name: credential-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['credential-service:8084']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: credential-service

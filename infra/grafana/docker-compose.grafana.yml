@@ -1,0 +1,46 @@
+services:
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: spawnbase-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      # Path relative to docker-compose.grafana.yml location
+      # But docker-compose resolves paths relative to where
+      # you RUN the command (project root), so use full path:
+      - ./infra/grafana/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - spawnbase-net
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: spawnbase-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: false
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/spawnbase-dashboard.json
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./infra/grafana/grafana-provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    networks:
+      - spawnbase-net
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  spawnbase-net:
+    external: true
+    name: spawnbase_spawnbase-net

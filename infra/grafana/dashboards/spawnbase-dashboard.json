@@ -1,0 +1,273 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": { "list": [] },
+  "description": "SpawnBase microservices observability dashboard",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Service Health",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } }, "type": "value" }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+      "title": "API Gateway",
+      "type": "stat",
+      "targets": [{ "datasource": "Prometheus", "expr": "up{job=\"api-gateway\"}", "legendFormat": "API Gateway" }]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } }, "type": "value" }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 2,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+      "title": "Metadata Service",
+      "type": "stat",
+      "targets": [{ "datasource": "Prometheus", "expr": "up{job=\"metadata-service\"}", "legendFormat": "Metadata" }]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } }, "type": "value" }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 3,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+      "title": "Lifecycle Service",
+      "type": "stat",
+      "targets": [{ "datasource": "Prometheus", "expr": "up{job=\"lifecycle-service\"}", "legendFormat": "Lifecycle" }]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } }, "type": "value" }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 4,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+      "title": "Provisioning Service",
+      "type": "stat",
+      "targets": [{ "datasource": "Prometheus", "expr": "up{job=\"provisioning-service\"}", "legendFormat": "Provisioning" }]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } }, "type": "value" }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "id": 5,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+      "title": "Credential Service",
+      "type": "stat",
+      "targets": [{ "datasource": "Prometheus", "expr": "up{job=\"credential-service\"}", "legendFormat": "Credential" }]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "title": "HTTP Request Rate",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 10,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" } },
+      "title": "HTTP Requests per Second — All Services",
+      "type": "timeseries",
+      "targets": [
+        { "datasource": "Prometheus", "expr": "rate(http_server_requests_seconds_count{job=\"api-gateway\"}[1m])", "legendFormat": "api-gateway {{uri}}" },
+        { "datasource": "Prometheus", "expr": "rate(http_server_requests_seconds_count{job=\"metadata-service\"}[1m])", "legendFormat": "metadata {{uri}}" },
+        { "datasource": "Prometheus", "expr": "rate(http_server_requests_seconds_count{job=\"lifecycle-service\"}[1m])", "legendFormat": "lifecycle {{uri}}" },
+        { "datasource": "Prometheus", "expr": "rate(http_server_requests_seconds_count{job=\"provisioning-service\"}[1m])", "legendFormat": "provisioning {{uri}}" }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 11,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" } },
+      "title": "HTTP Response Time p99 — All Services",
+      "type": "timeseries",
+      "targets": [
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.99, rate(http_server_requests_seconds_bucket{job=\"api-gateway\"}[5m]))", "legendFormat": "api-gateway p99" },
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.99, rate(http_server_requests_seconds_bucket{job=\"metadata-service\"}[5m]))", "legendFormat": "metadata p99" },
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.99, rate(http_server_requests_seconds_bucket{job=\"lifecycle-service\"}[5m]))", "legendFormat": "lifecycle p99" },
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.99, rate(http_server_requests_seconds_bucket{job=\"provisioning-service\"}[5m]))", "legendFormat": "provisioning p99" }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "title": "JVM Health",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "id": 20,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" } },
+      "title": "JVM Heap Memory Used",
+      "type": "timeseries",
+      "targets": [
+        { "datasource": "Prometheus", "expr": "jvm_memory_used_bytes{area=\"heap\",job=\"api-gateway\"}", "legendFormat": "api-gateway heap" },
+        { "datasource": "Prometheus", "expr": "jvm_memory_used_bytes{area=\"heap\",job=\"metadata-service\"}", "legendFormat": "metadata heap" },
+        { "datasource": "Prometheus", "expr": "jvm_memory_used_bytes{area=\"heap\",job=\"lifecycle-service\"}", "legendFormat": "lifecycle heap" },
+        { "datasource": "Prometheus", "expr": "jvm_memory_used_bytes{area=\"heap\",job=\"provisioning-service\"}", "legendFormat": "provisioning heap" },
+        { "datasource": "Prometheus", "expr": "jvm_memory_used_bytes{area=\"heap\",job=\"credential-service\"}", "legendFormat": "credential heap" }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "id": 21,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" } },
+      "title": "JVM Threads — All Services",
+      "type": "timeseries",
+      "targets": [
+        { "datasource": "Prometheus", "expr": "jvm_threads_live_threads{job=\"api-gateway\"}", "legendFormat": "api-gateway threads" },
+        { "datasource": "Prometheus", "expr": "jvm_threads_live_threads{job=\"metadata-service\"}", "legendFormat": "metadata threads" },
+        { "datasource": "Prometheus", "expr": "jvm_threads_live_threads{job=\"lifecycle-service\"}", "legendFormat": "lifecycle threads" },
+        { "datasource": "Prometheus", "expr": "jvm_threads_live_threads{job=\"provisioning-service\"}", "legendFormat": "provisioning threads" }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 103,
+      "title": "Error Rate",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "percentunit",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "id": 30,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" } },
+      "title": "HTTP 5xx Error Rate — All Services",
+      "type": "timeseries",
+      "targets": [
+        { "datasource": "Prometheus", "expr": "rate(http_server_requests_seconds_count{status=~\"5..\",job=\"api-gateway\"}[5m]) / rate(http_server_requests_seconds_count{job=\"api-gateway\"}[5m])", "legendFormat": "api-gateway errors" },
+        { "datasource": "Prometheus", "expr": "rate(http_server_requests_seconds_count{status=~\"5..\",job=\"metadata-service\"}[5m]) / rate(http_server_requests_seconds_count{job=\"metadata-service\"}[5m])", "legendFormat": "metadata errors" },
+        { "datasource": "Prometheus", "expr": "rate(http_server_requests_seconds_count{status=~\"5..\",job=\"lifecycle-service\"}[5m]) / rate(http_server_requests_seconds_count{job=\"lifecycle-service\"}[5m])", "legendFormat": "lifecycle errors" },
+        { "datasource": "Prometheus", "expr": "rate(http_server_requests_seconds_count{status=~\"5..\",job=\"provisioning-service\"}[5m]) / rate(http_server_requests_seconds_count{job=\"provisioning-service\"}[5m])", "legendFormat": "provisioning errors" }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["spawnbase", "microservices"],
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "SpawnBase — Microservices Dashboard",
+  "uid": "spawnbase-main",
+  "version": 1
+}
