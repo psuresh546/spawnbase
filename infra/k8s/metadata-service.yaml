@@ -51,6 +51,15 @@ spec:
                 secretKeyRef:
                   name: spawnbase-secrets
                   key: postgres-password
+          volumeMounts:
+            # CSI volume mount triggers Key Vault
+            # secret fetch via Workload Identity
+            # on pod startup. Secrets are available
+            # as files at /mnt/secrets/ AND synced
+            # to the spawnbase-secrets K8s Secret.
+            - name: secrets-store
+              mountPath: /mnt/secrets
+              readOnly: true
           resources:
             requests:
               memory: "256Mi"
@@ -70,6 +79,18 @@ spec:
               port: 8081
             initialDelaySeconds: 60
             periodSeconds: 30
+      volumes:
+        # CSI volume — connects pod to Azure Key Vault
+        # via the SecretProviderClass defined in
+        # secrets-store.yaml. Without this volume,
+        # no secrets are fetched from Key Vault even
+        # if the Service Account has correct permissions.
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: spawnbase-secrets
 ---
 apiVersion: v1
 kind: Service
