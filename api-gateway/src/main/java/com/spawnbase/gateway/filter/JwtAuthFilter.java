@@ -48,15 +48,43 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String method = request.getMethod();
 
-        // OPTIONS preflight — always allow (for CORS)
+        // ─────────────────────────────────────────
+        // CORS — single source of truth.
+        // No CorsConfig bean, no properties CORS.
+        // Only this filter sets CORS headers so
+        // there are never duplicate header values.
+        // ─────────────────────────────────────────
+        response.setHeader(
+                "Access-Control-Allow-Origin",
+                "http://localhost:3000");
+        response.setHeader(
+                "Access-Control-Allow-Methods",
+                "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+        response.setHeader(
+                "Access-Control-Allow-Headers",
+                "Authorization,Content-Type,Accept,Origin," +
+                        "X-Requested-With");
+        response.setHeader(
+                "Access-Control-Allow-Credentials",
+                "true");
+        response.setHeader(
+                "Access-Control-Max-Age",
+                "3600");
+
+        // ─────────────────────────────────────────
+        // OPTIONS preflight — respond 200 immediately.
+        // flushBuffer() ensures the response is sent
+        // before returning — without it the browser
+        // receives an empty response (ERR_EMPTY_RESPONSE).
+        // ─────────────────────────────────────────
         if ("OPTIONS".equalsIgnoreCase(method)) {
-            filterChain.doFilter(request, response);
+            response.setStatus(HttpServletResponse.SC_OK);
+            response.flushBuffer();
             return;
         }
 
         // Public paths — skip JWT validation
         if (isPublicPath(path)) {
-            log.debug("Public path — skipping JWT: {}", path);
             filterChain.doFilter(request, response);
             return;
         }
@@ -67,7 +95,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         if (token == null) {
             log.warn("No JWT token — path: {}", path);
-            sendError(response, HttpStatus.UNAUTHORIZED,"Missing Authorization header. " +
+            sendError(response, HttpStatus.UNAUTHORIZED,
+                    "Missing Authorization header. " +
                             "Expected: Bearer <token>");
             return;
         }
@@ -75,7 +104,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         // Validate token signature and expiration
         if (!jwtUtil.isValid(token)) {
             log.warn("Invalid JWT token — path: {}", path);
-            sendError(response, HttpStatus.UNAUTHORIZED,"Invalid or expired JWT token");
+            sendError(response, HttpStatus.UNAUTHORIZED,
+                    "Invalid or expired JWT token");
             return;
         }
 
@@ -83,24 +113,24 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String userId = jwtUtil.getSubject(token);
         List<String> roles = jwtUtil.getRoles(token);
 
-        log.debug("JWT valid — user: {} roles: {}", userId, roles);
-
         // RBAC — mutating operations require ADMIN role
-        if (MUTATING_METHODS.contains(
-                method.toUpperCase())) {
+        if (MUTATING_METHODS.contains(method.toUpperCase())) {
             if (!roles.contains("ADMIN")) {
-                log.warn("RBAC denied — user: {} " + "roles: {} method: {}", userId, roles, method);
-                sendError(response, HttpStatus.FORBIDDEN,"Insufficient permissions. " +
+                log.warn("RBAC denied — user: {} method: {}",
+                        userId, method);
+                sendError(response, HttpStatus.FORBIDDEN,
+                        "Insufficient permissions. " +
                                 "ADMIN role required for " + method);
                 return;
             }
         }
 
-        // Store user context as request attributes
         request.setAttribute("X-User-Id", userId);
-        request.setAttribute("X-User-Roles", String.join(",", roles));
+        request.setAttribute("X-User-Roles",
+                String.join(",", roles));
 
-        log.info("JWT authorized — user: {} {} {}", userId, method, path);
+        log.info("JWT authorized — user: {} {} {}",
+                userId, method, path);
 
         filterChain.doFilter(request, response);
     }
@@ -110,13 +140,17 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     private String extractToken(String authHeader) {
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+        if (authHeader != null
+                && authHeader.startsWith("Bearer ")) {
             return authHeader.substring(7);
         }
         return null;
     }
 
-    private void sendError(HttpServletResponse response, HttpStatus status, String message) throws IOException {
+    private void sendError(
+            HttpServletResponse response,
+            HttpStatus status,
+            String message) throws IOException {
 
         response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
@@ -128,6 +162,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 "message", message
         );
 
-        response.getWriter().write(objectMapper.writeValueAsString(body));
+        response.getWriter().write(
+                objectMapper.writeValueAsString(body));
     }
 }
