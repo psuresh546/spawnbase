@@ -62,14 +62,14 @@ That makes it a realistic reference for how a provisioning platform is stitched 
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    React Admin UI                        │
-│                   localhost:3000                         │
+│                    React Admin UI                       │
+│                   localhost:3000                        │
 └───────────────────────┬─────────────────────────────────┘
                         │ JWT Bearer token
 ┌───────────────────────▼─────────────────────────────────┐
-│                   API Gateway                            │
-│              JWT auth + RBAC + routing                   │
-│                   localhost:8080                         │
+│                   API Gateway                           │
+│              JWT auth + RBAC + routing                  │
+│                   localhost:8080                        │
 └──┬──────────┬──────────┬──────────┬──────────┬──────────┘
    │          │          │          │          │
    ▼          ▼          ▼          ▼          ▼
