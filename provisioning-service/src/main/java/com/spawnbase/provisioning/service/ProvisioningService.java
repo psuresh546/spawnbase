@@ -69,7 +69,9 @@ public class ProvisioningService {
     public void provision(
             UUID instanceId,
             DatabaseType dbType,
-            String password) {
+            String password,
+            String requestedDbName,
+            String requestedUsername) {
 
         log.info("Provisioning {} instance: {}",
                 dbType, instanceId);
@@ -79,6 +81,16 @@ public class ProvisioningService {
         String containerName = "spawnbase-" + instanceId;
         String containerId = null;
 
+        // Resolve DB name — use requested or auto-generate
+        String dbName = (requestedDbName == null
+                || requestedDbName.isBlank())
+                ? buildDbName(instanceId)
+                : requestedDbName;
+        String username = (requestedUsername == null
+                || requestedUsername.isBlank())
+                ? "spawnbase"
+                : requestedUsername;
+
         try {
             // Step 1 — Pull image
             log.info("Pulling image: {}",
@@ -87,8 +99,9 @@ public class ProvisioningService {
 
             // Step 2 — Build container config
             ContainerCreateRequest createRequest =
-                    buildCreateRequest(provider,
-                            password, instanceId);
+                    buildCreateRequest(
+                            provider, password,
+                            instanceId, dbName);
 
             // Step 3 — Create container
             containerId = dockerClient.createContainer(
@@ -98,8 +111,7 @@ public class ProvisioningService {
             dockerClient.startContainer(containerId);
 
             // Step 5 — Wait for health check to pass
-            log.info("Waiting for container to " +
-                    "become healthy...");
+            log.info("Waiting for container to become healthy...");
             waitForHealthy(containerId);
 
             // Step 6 — Get assigned host port
@@ -116,7 +128,6 @@ public class ProvisioningService {
                     containerId, hostPort);
 
             // Step 8 — Store credentials
-            String dbName = buildDbName(instanceId);
             String connectionUrl = provider.getConnectionUrl(
                     "localhost", hostPort, dbName);
 
@@ -131,11 +142,7 @@ public class ProvisioningService {
         } catch (Exception e) {
             log.error("Failed to provision instance {}: {}",
                     instanceId, e.getMessage(), e);
-
-            // Best-effort rollback — stop + remove container
             rollbackService.rollback(instanceId, containerId);
-
-            // Mark FAILED regardless of rollback result
             updateState(instanceId,
                     InstanceState.FAILED, null, null);
         }
@@ -221,6 +228,27 @@ public class ProvisioningService {
         }
     }
 
+    /**
+     * Restart a running container.
+     * Transitions: RUNNING → RESTARTING → RUNNING
+     */
+    public void restart(UUID instanceId, String containerId) {
+        log.info("Restarting instance: {}", instanceId);
+        try {
+            updateState(instanceId, InstanceState.RESTARTING,
+                    containerId, null);
+            dockerClient.restartContainer(containerId);
+            waitForHealthy(containerId);
+            updateState(instanceId, InstanceState.RUNNING,
+                    containerId, null);
+        } catch (Exception e) {
+            log.error("Failed to restart instance {}: {}",
+                    instanceId, e.getMessage(), e);
+            updateState(instanceId, InstanceState.FAILED,
+                    null, null);
+        }
+    }
+
     // ─────────────────────────────────────────
     // PRIVATE HELPERS
     // ─────────────────────────────────────────
@@ -244,21 +272,19 @@ public class ProvisioningService {
     private ContainerCreateRequest buildCreateRequest(
             DatabaseProvider provider,
             String password,
-            UUID instanceId) {
+            UUID instanceId,
+            String dbName) {
 
-        String dbName = buildDbName(instanceId);
         long memBytes = parseMemory(provider.getMemoryLimit());
 
-        // Port binding: container port → random host port
         String portKey = provider.getContainerPort() + "/tcp";
         Map<String, List<ContainerCreateRequest.PortBinding>>
                 ports = new HashMap<>();
         ports.put(portKey, List.of(
                 ContainerCreateRequest.PortBinding.builder()
-                        .hostPort("0") // 0 = assign random port
+                        .hostPort("0")
                         .build()));
 
-        // Health check command: CMD + provider args
         List<String> healthTest = new ArrayList<>();
         healthTest.add("CMD");
         healthTest.addAll(Arrays.asList(
@@ -285,11 +311,10 @@ public class ProvisioningService {
                         ContainerCreateRequest.HealthCheck
                                 .builder()
                                 .test(healthTest)
-                                // Intervals in nanoseconds
-                                .interval(10_000_000_000L) // 10s
-                                .timeout(5_000_000_000L)   // 5s
+                                .interval(10_000_000_000L)
+                                .timeout(5_000_000_000L)
                                 .retries(5)
-                                .startPeriod(30_000_000_000L) // 30s
+                                .startPeriod(30_000_000_000L)
                                 .build())
                 .build();
     }

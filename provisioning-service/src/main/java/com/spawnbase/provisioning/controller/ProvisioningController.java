@@ -33,7 +33,6 @@ public class ProvisioningController {
         log.info("Provision request for instance {} — type: {}",
                 id, request.getDbType());
 
-        // Auto-generate password if not provided
         String password = (request.getPassword() == null
                 || request.getPassword().isBlank())
                 ? PasswordGenerator.generate()
@@ -48,7 +47,9 @@ public class ProvisioningController {
                 provisioningService.provision(
                         id,
                         request.getDbType(),
-                        password
+                        password,
+                        request.getDbName(),
+                        request.getUsername()
                 )
         );
 
@@ -66,12 +67,12 @@ public class ProvisioningController {
     @PostMapping("/instances/{id}/stop")
     public ResponseEntity<Map<String, Object>> stop(
             @PathVariable UUID id,
-            @RequestParam String containerId) {
+            @RequestBody Map<String, String> body) {
 
+        String containerId = body.get("containerId");
         log.info("Stop request for instance {}", id);
         CompletableFuture.runAsync(() ->
-                provisioningService.stop(id, containerId)
-        );
+                provisioningService.stop(id, containerId));
 
         return ResponseEntity.accepted().body(Map.of(
                 "message", "Stop initiated",
@@ -82,16 +83,18 @@ public class ProvisioningController {
     @PostMapping("/instances/{id}/start")
     public ResponseEntity<Map<String, Object>> start(
             @PathVariable UUID id,
-            @RequestParam String containerId,
-            @RequestParam DatabaseType dbType) {
+            @RequestBody Map<String, String> body) {
 
-        log.info("Start request for instance {}", id);
+        String containerId = body.get("containerId");
+        DatabaseType dbType = DatabaseType.valueOf(
+                body.get("dbType"));
         DatabaseProvider provider =
                 providerFactory.getProvider(dbType);
 
+        log.info("Start request for instance {}", id);
         CompletableFuture.runAsync(() ->
-                provisioningService.start(id, containerId, provider)
-        );
+                provisioningService.start(
+                        id, containerId, provider));
 
         return ResponseEntity.accepted().body(Map.of(
                 "message", "Start initiated",
@@ -99,15 +102,33 @@ public class ProvisioningController {
         ));
     }
 
+    @PostMapping("/instances/{id}/restart")
+    public ResponseEntity<Map<String, Object>> restart(
+            @PathVariable UUID id,
+            @RequestBody Map<String, String> body) {
+
+        String containerId = body.get("containerId");
+        log.info("Restart request for instance {}", id);
+        CompletableFuture.runAsync(() ->
+                provisioningService.restart(id, containerId));
+
+        return ResponseEntity.accepted().body(Map.of(
+                "message", "Restart initiated",
+                "instanceId", id.toString()
+        ));
+    }
+
     @DeleteMapping("/instances/{id}")
     public ResponseEntity<Map<String, Object>> delete(
             @PathVariable UUID id,
-            @RequestParam(required = false) String containerId) {
+            @RequestBody(required = false)
+            Map<String, String> body) {
 
+        String containerId = body != null
+                ? body.get("containerId") : null;
         log.info("Delete request for instance {}", id);
         CompletableFuture.runAsync(() ->
-                provisioningService.delete(id, containerId)
-        );
+                provisioningService.delete(id, containerId));
 
         return ResponseEntity.accepted().body(Map.of(
                 "message", "Deletion initiated",

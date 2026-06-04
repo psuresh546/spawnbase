@@ -42,5 +42,4 @@ volumes:
 
 networks:
   spawnbase-net:
-    external: true
     name: spawnbase_spawnbase-net
